@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sema-test-agent
+  labels:
+    app: ai-agent
+spec:
+  containers:
+    - name: agent
+      image: curlimages/curl
+      command: ["/bin/sh", "-c", "sleep 3600"]

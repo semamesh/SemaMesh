@@ -1,0 +1,9 @@
+apiVersion: semamesh.io/v1alpha1
+kind: SemaTokenQuota
+metadata:
+  name: dev-team-budget
+  namespace: default
+spec:
+  budget: 5000
+  tokenType: "gpt-4-omni"
+  resetInterval: "Daily"

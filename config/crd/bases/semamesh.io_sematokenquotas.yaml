@@ -1,0 +1,32 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sematokenquotas.semamesh.io
+spec:
+  group: semamesh.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                budget: {type: integer}
+                tokenType: {type: string} # e.g., "gpt-4-total"
+                resetInterval: {type: string} # e.g., "Daily"
+            status:
+              type: object
+              properties:
+                used: {type: integer}
+                remaining: {type: integer}
+  scope: Namespaced
+  names:
+    plural: sematokenquotas
+    singular: sematokenquota
+    kind: SemaTokenQuota
+    shortNames:
+      - stq

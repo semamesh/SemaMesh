@@ -1,0 +1,14 @@
+apiVersion: semamesh.io/v1alpha1
+kind: SemaPolicy
+metadata:
+  name: infra-protection-policy
+  namespace: default
+spec:
+  rules:
+    - name: "block-cluster-deletion"
+      intentMatches:
+        - "delete namespace"
+        - "terminate node"
+        - "drop database"
+      riskLevel: "Critical"
+      action: "BLOCK" # Hard block at the proxy level

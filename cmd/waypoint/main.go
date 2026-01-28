@@ -15,7 +15,7 @@ func main() {
 	proxyHandler := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			// In a real Transparent Proxy, we use the Host header
-			// For this MVP, let's hardcode OpenAI as the default target
+			// For this MVP, I added OpenAI as the default target but can be modified via env var
 			// if the agent didn't specify a host (e.g. transparent redirect)
 			targetAddr := os.Getenv("SEMA_TARGET_URL")
             if targetAddr == "" {

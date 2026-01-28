@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sema-controller-sa
+  namespace: semamesh-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: semamesh-manager-role
+rules:
+  # Permissions to manage your Custom Resources
+  - apiGroups: ["semamesh.io"]
+    resources: ["semapolicies", "sematokenquotas"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+
+  # Permissions for the "Stateful Pause" (Managing Pods)
+  - apiGroups: [""]
+    resources: ["pods", "pods/status", "pods/log"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+
+  # Permission to interact with the Kubelet Checkpoint API
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get", "update", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: semamesh-manager-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: sema-controller-sa
+    namespace: semamesh-system
+roleRef:
+  kind: ClusterRole
+  name: semamesh-manager-role
+  apiGroup: rbac.authorization.k8s.io
