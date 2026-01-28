@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: semamesh-node-agent
+  namespace: semamesh-system
+  labels:
+    app: semamesh
+spec:
+  selector:
+    matchLabels:
+      app: semamesh
+  template:
+    metadata:
+      labels:
+        app: semamesh
+    spec:
+      # CRITICAL: We run on the Host Network so we can intercept ALL traffic
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+
+      serviceAccountName: sema-controller-sa # Re-use the SA we made for the controller
+
+      containers:
+        - name: semamesh-agent
+          image: semamesh:latest  # The image we just built
+          imagePullPolicy: IfNotPresent
+
+          # We need high privileges to load eBPF
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN", "NET_ADMIN"]
+
+          # Environment variables for configuration
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: BPF_OBJECT_PATH
+              value: "/usr/lib/bpf/sema_redirect.o"
+
+          # Mount the kernel interfaces so we can inject eBPF
+          volumeMounts:
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+            - name: bpf-maps
+              mountPath: /sys/fs/bpf
+
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: bpf-maps
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
