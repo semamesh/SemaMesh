@@ -27,9 +27,74 @@ By moving beyond simple Layer 4/7 networking into **Layer 8+ Semantic Networking
 ## 🏗️ Architecture
 SemaMesh consists of three primary components that work in harmony:
 
-1. **The Brain (Control Plane)**: A Kubernetes Controller written in Go that manages SemaPolicy and SemaTokenQuota CRDs.
+1. **The Brain (Control Plane)**: A cluster-wide Kubernetes Controller that watches `SemaPolicy` CRDs and coordinates complex actions like the "Stateful Pause."
 2. **The Trap (eBPF Interceptor)**: A C program loaded into the Linux Kernel that redirects outbound LLM traffic to the local Waypoint.
 3. **The Muscle (Waypoint Proxy)**: A high-performance Go proxy that analyzes "Reasoning Traces," counts tokens, and enforces security policies.
+4. **The Freeze (CRIU Engine)**: A sophisticated safety mechanism that snapshots the memory of "rogue" AI agents for human forensic analysis.
+
+### Architecture Diagram
+```mermaid
+graph TD
+  subgraph "Cluster-Wide (The Brain)"
+    direction TB
+    Controller[Sema Controller Pod]
+    K8sAPI[Kubernetes API Server]
+    CRD[(SemaPolicy & Quotas)]
+
+    Controller <--> K8sAPI
+    K8sAPI <--> CRD
+  end
+
+  subgraph "Worker Node A (The Muscle)"
+    direction TB
+    AgentA[AI Agent Pod]
+    eBPFA{eBPF Redirect}
+    WaypointA[Waypoint Proxy]
+
+    AgentA -- "LLM Traffic" --> eBPFA
+    eBPFA -- "Redirect" --> WaypointA
+    WaypointA -- "Report Violation" --> K8sAPI
+  end
+
+  subgraph "Worker Node B (The Muscle)"
+    direction TB
+    AgentB[AI Agent Pod]
+    eBPFB{eBPF Redirect}
+    WaypointB[Waypoint Proxy]
+
+    AgentB -- "LLM Traffic" --> eBPFB
+    eBPFB -- "Redirect" --> WaypointB
+    WaypointB -- "Report Violation" --> K8sAPI
+  end
+
+%% Controller actions
+  Controller -- "Trigger Pause/CRIU" --> WaypointA
+  Controller -- "Trigger Pause/CRIU" --> WaypointB
+
+  style Controller fill:#dfd,stroke:#333,stroke-width:2px
+  style WaypointA fill:#bbf,stroke:#333
+  style WaypointB fill:#bbf,stroke:#333
+  style eBPFA fill:#f96,stroke:#333
+  style eBPFB fill:#f96,stroke:#333
+```
+
+### Key Architectural Layers Explained
+
+1. **The Trap (eBPF Layer)**
+- Location: Linux Kernel Space (Per Node)
+- Role: Unlike traditional meshes that use slow iptables, SemaMesh uses eBPF hooks attached to the Traffic Control (tc) layer. It transparently "plucks" outbound AI traffic (port 443) out of the network stack and redirects it to the local Waypoint Proxy—without the application ever knowing.
+
+2. **The Muscle (Data Plane / Waypoint Proxy)**
+- Location: User Space (DaemonSet - One per Node)
+- Role: A high-performance Go proxy that replaces the heavy "sidecar" model. Instead of injecting a container into every single Pod, we run one efficient Waypoint per node. It handles the heavy lifting: parsing HTTP/JSON, counting tokens, and enforcing "Block" policies in real-time.
+
+3. **The Brain (Control Plane / Controller)**
+- Location: Cluster Scope (Deployment)
+- Role: The centralized orchestrator. It does not touch live traffic. Instead, it watches Kubernetes for changes to SemaPolicy and SemaTokenQuota CRDs. When a high-risk violation occurs (like an agent going rogue), the Brain coordinates with the Kubernetes API to trigger advanced countermeasures.
+
+4. **The Freeze (CRIU Integration)**
+- Location: Node & Container Runtime
+- Role: Our "Secret Sauce." When the Muscle detects a Critical policy violation, it flags the Pod. The Brain sees this flag and triggers CRIU (Checkpoint/Restore in Userspace). This freezes the AI agent's process state and writes its memory to disk, effectively pausing the agent mid-thought for human forensic analysis.
 
 # 🚀 Getting Started
 
