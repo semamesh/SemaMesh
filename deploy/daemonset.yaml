@@ -15,15 +15,15 @@ spec:
         app: semamesh
     spec:
       # CRITICAL: hostNetwork allows the eBPF program to see the node's real traffic
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+#      hostNetwork: true
+#      dnsPolicy: ClusterFirstWithHostNet
 
       # The Identity needed to read SemaPolicy/Quota CRDs
       serviceAccountName: sema-controller-sa
 
       containers:
         - name: semamesh-agent
-          image: semamesh:latest
+          image: semamesh-agent:latest
           imagePullPolicy: IfNotPresent
 
           securityContext:
@@ -37,8 +37,10 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             # Configurations for our Go Waypoint Proxy
-            - name: SEMA_TARGET_URL
-              value: "https://api.openai.com"
+            - name: TARGET_LLM
+              value: "http://mock-llm-service.default.svc.cluster.local:8080"
+            - name: PORT
+              value: "8080"
             - name: SEMA_DEFAULT_TOKEN_LIMIT
               value: "1000"
             - name: SLACK_WEBHOOK_URL # Optional: Set this to enable alerts

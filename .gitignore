@@ -1,0 +1,21 @@
+# Binaries
+bin/
+waypoint
+sema-controller
+
+# BPF Objects
+*.o
+
+# Local Dev
+.env
+.idea/
+.vscode/
+vendor/
+
+go.mod
+go.sum
+.DS_Store
+*.log
+*.tmp
+*.out
+

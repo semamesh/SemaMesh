@@ -2,54 +2,67 @@ package proxy
 
 import (
 	"bytes"
-	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 )
 
-// Middleware function signature
-type Middleware func(http.Handler) http.Handler
-
-// 1. Logger: Simply prints what is happening
-func WithLogging(next http.Handler) http.Handler {
+// IntentMiddleware intercepts requests to check for policy violations
+func IntentMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[Waypoint] Request: %s %s", r.Method, r.URL.Host)
+
+		// 1. Read the body to inspect the prompt
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+			return
+		}
+
+		// IMPORTANT: Restore the body so the next handler (the Mock LLM) can read it too
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// Normalize text for analysis
+		bodyStr := strings.ToLower(string(bodyBytes))
+
+		// --- 2. LOGIC: Intent Detection ---
+		// If the prompt contains "delete", we trigger a policy violation
+		if strings.Contains(bodyStr, "delete") {
+			log.Println("INTENT_ANALYSIS: Destructive intent detected! Triggering PAUSE.")
+
+			// Create a file to simulate the stateful pause (for the smoke test to see)
+			// In a real scenario, this would call the Controller API
+			_ = os.WriteFile("/tmp/semamesh-violation", []byte("violation"), 0644)
+
+			http.Error(w, "SemaMesh Policy Violation: Agent Paused", http.StatusForbidden)
+			return
+		}
+
+		// --- 3. LOGIC: Token Counting ---
+		// Simple approximation: count words as tokens
+		tokenCount := len(strings.Fields(bodyStr))
+
+		// Get limit from environment or use default
+		limitStr := os.Getenv("TOKEN_LIMIT")
+		if limitStr == "" {
+			limitStr = "1000"
+		}
+
+		limit, _ := strconv.Atoi(limitStr)
+
+		// Check Quota
+		if tokenCount > limit {
+			log.Printf("QUOTA_VIOLATION: Request size %d exceeds limit %d", tokenCount, limit)
+			http.Error(w, "SemaMesh: Token Quota Exceeded", http.StatusTooManyRequests)
+			return
+		}
+
+		// Log success for the smoke test to grep
+		log.Printf("INTENT_ANALYSIS: Safe. Tokens: %d", tokenCount)
+
+		// 4. Pass request to the actual LLM
 		next.ServeHTTP(w, r)
 	})
-}
-
-// 2. TokenGuard: The "Bank Teller"
-// In a real app, this would check Redis. Here, we mock a 1000-token limit.
-func WithTokenGuard(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Fetch limit from Environment, default to 1000 if not set
-        limitStr := os.Getenv("SEMA_DEFAULT_TOKEN_LIMIT")
-        limit := 1000
-        if val, err := strconv.Atoi(limitStr); err == nil {
-            limit = val
-        }
-
-        if r.Method == "POST" {
-            // ... (body reading logic) ...
-            if tokenCount > limit {
-                // NEW: Call our utility function
-                NotifyViolation(r.Header.Get("X-Agent-Name"), "Token Quota Exceeded")
-
-                log.Printf("[TokenGuard] BLOCKED: %d tokens exceeds limit", tokenCount)
-                http.Error(w, "SemaMesh: Token Quota Exceeded", http.StatusTooManyRequests)
-                return
-            }
-        }
-        next.ServeHTTP(w, r)
-    })
-}
-
-// 3. Chain Helper: Wraps the final handler with all middlewares
-func BuildChain(finalHandler http.Handler, middlewares ...Middleware) http.Handler {
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		finalHandler = middlewares[i](finalHandler)
-	}
-	return finalHandler
 }

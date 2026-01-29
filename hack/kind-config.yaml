@@ -1,0 +1,18 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: semamesh-lab
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.31.0
+    extraMounts:
+      # BPF maps (Keep Bidirectional for persistence)
+      - hostPath: /sys/fs/bpf
+        containerPath: /sys/fs/bpf
+        propagation: Bidirectional
+      # Kernel modules (Read-only is fine)
+      - hostPath: /lib/modules
+        containerPath: /lib/modules
+        readOnly: true
+      # Debug symbols (Removed Bidirectional to fix the "not a shared mount" error)
+      - hostPath: /sys/kernel/debug
+        containerPath: /sys/kernel/debug

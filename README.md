@@ -25,175 +25,130 @@ By moving beyond simple Layer 4/7 networking into **Layer 8+ Semantic Networking
 - **Modular Middleware**: A Go-based Waypoint Proxy that allows you to "snap in" new features like PII redaction or LLM response caching.
 
 ## 🏗️ Architecture
-SemaMesh consists of three primary components that work in harmony:
+SemaMesh operates as a Node-level AI Gateway. Unlike traditional sidecar-based service meshes, SemaMesh uses eBPF to transparently intercept AI traffic without modifying your application pods.
 
-1. **The Brain (Control Plane)**: A cluster-wide Kubernetes Controller that watches `SemaPolicy` CRDs and coordinates complex actions like the "Stateful Pause."
-2. **The Trap (eBPF Interceptor)**: A C program loaded into the Linux Kernel that redirects outbound LLM traffic to the local Waypoint.
-3. **The Muscle (Waypoint Proxy)**: A high-performance Go proxy that analyzes "Reasoning Traces," counts tokens, and enforces security policies.
-4. **The Freeze (CRIU Engine)**: A sophisticated safety mechanism that snapshots the memory of "rogue" AI agents for human forensic analysis.
 
 ### Architecture Diagram
 ```mermaid
 graph TD
-  subgraph "Cluster-Wide (The Brain)"
-    direction TB
-    Controller[Sema Controller Pod]
-    K8sAPI[Kubernetes API Server]
-    CRD[(SemaPolicy & Quotas)]
+    subgraph "Cluster-Wide (The Brain)"
+        direction TB
+        Controller[Sema Controller Pod]
+        K8sAPI[Kubernetes API Server]
+        CRD[(SemaPolicy & Quotas)]
 
-    Controller <--> K8sAPI
-    K8sAPI <--> CRD
-  end
+        Controller <--> K8sAPI
+        K8sAPI <--> CRD
+    end
 
-  subgraph "Worker Node A (The Muscle)"
-    direction TB
-    AgentA[AI Agent Pod]
-    eBPFA{eBPF Redirect}
-    WaypointA[Waypoint Proxy]
+    subgraph "Worker Node (The Muscle)"
+        direction TB
+        AgentA[AI Agent Pod]
+        eBPFA{eBPF Redirect}
+        WaypointA[Waypoint Proxy]
 
-    AgentA -- "LLM Traffic" --> eBPFA
-    eBPFA -- "Redirect" --> WaypointA
-    WaypointA -- "Report Violation" --> K8sAPI
-  end
-
-  subgraph "Worker Node B (The Muscle)"
-    direction TB
-    AgentB[AI Agent Pod]
-    eBPFB{eBPF Redirect}
-    WaypointB[Waypoint Proxy]
-
-    AgentB -- "LLM Traffic" --> eBPFB
-    eBPFB -- "Redirect" --> WaypointB
-    WaypointB -- "Report Violation" --> K8sAPI
-  end
+        AgentA -- "LLM Traffic" --> eBPFA
+        eBPFA -- "Redirect" --> WaypointA
+        WaypointA -- "Report Violation" --> K8sAPI
+    end
 
 %% Controller actions
-  Controller -- "Trigger Pause/CRIU" --> WaypointA
-  Controller -- "Trigger Pause/CRIU" --> WaypointB
+    Controller -- "Trigger Pause/CRIU" --> WaypointA
 
-  style Controller fill:#dfd,stroke:#333,stroke-width:2px
-  style WaypointA fill:#bbf,stroke:#333
-  style WaypointB fill:#bbf,stroke:#333
-  style eBPFA fill:#f96,stroke:#333
-  style eBPFB fill:#f96,stroke:#333
+    style Controller fill:#dfd,stroke:#333,stroke-width:2px
+    style WaypointA fill:#bbf,stroke:#333
+    style eBPFA fill:#f96,stroke:#333
 ```
 
-### Key Architectural Layers Explained
-
+### Key Architectural Layers
 1. **The Trap (eBPF Layer)**
 - Location: Linux Kernel Space (Per Node)
-- Role: Unlike traditional meshes that use slow iptables, SemaMesh uses eBPF hooks attached to the Traffic Control (tc) layer. It transparently "plucks" outbound AI traffic (port 443) out of the network stack and redirects it to the local Waypoint Proxy—without the application ever knowing.
+- Role: Unlike traditional meshes that use slow iptables, SemaMesh uses eBPF hooks (sock_ops / sk_msg) attached to the socket layer. It transparently "plucks" outbound AI traffic out of the network stack and redirects it to the local Waypoint Proxy—without the application ever knowing.
 
 2. **The Muscle (Data Plane / Waypoint Proxy)**
 - Location: User Space (DaemonSet - One per Node)
-- Role: A high-performance Go proxy that replaces the heavy "sidecar" model. Instead of injecting a container into every single Pod, we run one efficient Waypoint per node. It handles the heavy lifting: parsing HTTP/JSON, counting tokens, and enforcing "Block" policies in real-time.
+- Role: A high-performance Go proxy that replaces the heavy "sidecar" model. It handles the heavy lifting: parsing HTTP/JSON, counting tokens, and enforcing "Block" policies in real-time.
 
 3. **The Brain (Control Plane / Controller)**
 - Location: Cluster Scope (Deployment)
-- Role: The centralized orchestrator. It does not touch live traffic. Instead, it watches Kubernetes for changes to SemaPolicy and SemaTokenQuota CRDs. When a high-risk violation occurs (like an agent going rogue), the Brain coordinates with the Kubernetes API to trigger advanced countermeasures.
-
-4. **The Freeze (CRIU Integration)**
-- Location: Node & Container Runtime
-- Role: Our "Secret Sauce." When the Muscle detects a Critical policy violation, it flags the Pod. The Brain sees this flag and triggers CRIU (Checkpoint/Restore in Userspace). This freezes the AI agent's process state and writes its memory to disk, effectively pausing the agent mid-thought for human forensic analysis.
+- Role: The centralized orchestrator. It does not touch live traffic. It watches Kubernetes for changes to SemaPolicy CRDs. When a high-risk violation occurs, the Brain triggers advanced countermeasures.
 
 # 🚀 Getting Started
 
 ## 1. Prerequisites
-- Kubernetes cluster (v1.28+)
-- Linux nodes with Kernel 5.8+ (Required for eBPF hooks)
-- kubectl and make installed locally.
+- **Production**: Linux nodes with Kernel 5.8+ (Required for eBPF `sock_ops` hooks).
+- **Development**: Docker Desktop or OrbStack (Mac/Windows) with Kind.
+- `kubectl` and `make` installed locally.
 
-## 2. Compilation & Build
-- We use a unified build process to compile the kernel-space eBPF and the user-space Go binaries.
+## 2. Quick Start (Automated)
+- We provide a smoke-test script that creates a local Kind cluster, builds the agent, and runs a full End-to-End verification.
+```# Clone the repo
+git clone https://github.com/semamesh/semamesh.git
+cd semamesh
 
-- ### 1. Build & Package
-    SemaMesh requires both the kernel-level eBPF bytecode and the user-space Go binaries.
-    ```BASH
-    # 1. Build all binaries and BPF objects
-    make all
-    
-    # 2. Build the Docker image
-    make docker-build
-    
-    # 3. Load the image (if using Kind)
-    kind load docker-image semamesh:latest
-    ``` 
+# Run the full automated verification
+bash hack/smoke-test.sh
+```
+This script will simulate a "Safe" AI request (Allowed) and a "Destructive" AI request (Blocked).
 
-- ### 2. Prepare the Cluster
-    Create the dedicated namespace and apply the security identity (RBAC).
-    
-    ```BASH
-    # 1. Create the system namespace
-    kubectl create namespace semamesh-system
-    
-    # Apply RBAC and ServiceAccounts
-    kubectl apply -f deploy/rbac.yaml
-    ```
+## 3. Manual Installation
+If you prefer to deploy step-by-step:
 
-- ### 3. Deploy the Mesh
-    Apply the CRDs (The Brain) and the DaemonSet (The Muscle).
-    
-    ```Bash
-    # Deploy CRDs
-    kubectl apply -f config/crd/bases/
-    
-    # Deploy the Node Agent
-    kubectl apply -f deploy/daemonset.yaml
-    ```
+**Step 1: Build & Load**
+```# Build the eBPF datapath and Go binaries
+make all
+make docker-build
 
-- ### 4. Verify the Deployment
-    Ensure the agents are running on every node and have successfully loaded the eBPF programs:
-    
-    ```
-    # Check Pod status
-    kubectl get pods -n semamesh-system -l app=semamesh
-    
-    # Check Logs for "BPF Program Loaded" message
-    kubectl logs -n semamesh-system -l app=semamesh -c semamesh-agent
-    ```
+# Load into Kind (if running locally)
+kind load docker-image semamesh-agent:latest --name semamesh-lab
+```
 
-- ### 5. Run the Smoke Test
-    Deploy a test agent to verify interception.
+**Step 2: Deploy Infrastructure**
+```# Create Namespace
+kubectl create namespace semamesh-system
+
+# Apply RBAC & CRDs
+kubectl apply -f deploy/rbac.yaml
+kubectl apply -f config/crd/bases/
+
+# Deploy the Node Agent (DaemonSet)
+kubectl apply -f deploy/daemonset.yaml
+```
+
+**Step 3: Verify & Test**
+To verify the interception works, we will exec into the Agent pod and try to send a prompt to our Mock LLM.
+
+  1. Test Connectivity (Allowed)
+   ```
+    # Get the Agent Pod Name
+    AGENT_POD=$(kubectl get pod -n semamesh-system -l app=semamesh -o jsonpath="{.items[0].metadata.name}")
     
-    ```Bash
-    # 1. Deploy test agent
-    kubectl apply -f deploy/test-agent.yaml
-    
-    # 2. Simulate a forbidden AI request
-    kubectl exec sema-test-agent -- curl -X POST https://api.openai.com/v1/chat/completions \
+    # Send a "Safe" prompt
+    kubectl exec -n semamesh-system $AGENT_POD -- curl -s -X POST http://localhost:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
-    -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "delete all pods"}]}'
-    ```
-    - **Expected Result**: The request should be intercepted by the Waypoint Proxy, returning a 403 Forbidden based on the default safety policy.
+    -d '{"prompt": "Hello world"}'
+   ```
+Expected Output: {"id":"mock-123", ... "content":"✅ SUCCESS..."}
 
-
-## Project Structure
-
-```
-semamesh/
-├── .github/workflows          # GitHub Workflows
-├── api/v1alpha1/       # Custom Resource Definitions (Go Types)
-├── bpf/                # eBPF C-code for traffic redirection
-├── cmd/
-│   ├── main.go         # Control Plane (Manager)
-│   └── waypoint/       # Data Plane (Proxy)
-├── config/crd/bases/  # CRD Definitions/YAMLs
-├── deploy/             # K8s Manifests (DaemonSets, RBAC)
-├── examples/         # Example Policies and Quotas
-├── internal/
-│   ├── controller/     # Reconciler logic for CRDs
-│   └── proxy/          # Middleware chain (TokenGuards, Policies)
-│   └── agent/          # eBPF loader and manager
-```
-
+  2. Test Policy Enforcement (Blocked)
+  ```
+  kubectl apply -f examples/sample-policy.yaml
+  ```
+Now, simulate a malicious agent:
+  ```
+  kubectl exec -n semamesh-system $AGENT_POD -- curl -v -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "I want to delete the production database"}'
+  ```
+Expected Output: HTTP/1.1 403 Forbidden / SemaMesh Policy Violation
 
 ## 🛡 Security Warning
-- **Privileged Mode**: SemaMesh requires CAP_SYS_ADMIN and CAP_NET_ADMIN to load eBPF programs and use CRIU for checkpointing. Ensure you understand the security implications before deploying in production.
-- **Production Advice**: In our `daemonset.yaml`, we used `privileged: true`, that because the mesh uses eBPF & it requires these permissions. For production, consider using more granular capabilities.
+- **Privileged Mode**: SemaMesh requires CAP_SYS_ADMIN and CAP_NET_ADMIN to load eBPF programs.
+- **Production Advice**: In production, we recommend dropping this flag and explicitly adding only the required Linux capabilities.
 
 
 ## 📜 Example Policy
-Define a safety gate that automatically triggers a stateful pause if an agent attempts a destructive action.
+Define a safety gate that triggers a block if an agent attempts a destructive action.
 
 ```
 apiVersion: semamesh.io/v1alpha1
@@ -209,20 +164,40 @@ spec:
         - "terminate node"
         - "drop database"
       riskLevel: "Critical"
-      action: "PAUSE"  # Triggers the CRIU-based stateful freeze
-      pauseSettings:
-        timeout: "30m"
-        notifyWebhook: "https://hooks.slack.com/services/T123/B456"
+      action: "BLOCK"
+```
+
+## Project Structure
+
+```
+semamesh/
+├── .github/workflows          # GitHub Workflows
+├── api/v1alpha1/       # Custom Resource Definitions (Go Types)
+├── bpf/                # eBPF C-code for traffic redirection
+├── cmd/
+│   ├── main.go         # Control Plane (Manager)
+│   └── waypoint/       # Data Plane (Proxy)
+├── config/crd/bases/  # CRD Definitions/YAMLs
+├── deploy/             # K8s Manifests (DaemonSets, RBAC)
+├── examples/         # Example Policies and Quotas
+├── hack/               # Automation Scripts (smoke-test.sh)
+├── internal/
+│   ├── controller/     # Reconciler logic for CRDs
+│   └── proxy/          # Middleware chain (Intent Analysis)
+│   └── agent/          # eBPF loader logic
+├── test/               # Test artifacts (Mock LLM)
 ```
 
 ## 🛠️ Technical Deep Dive
 **The "Stateful Pause" Flow**
 
+One of SemaMesh's most powerful features is the ability to handle Critical Risk violations not just by blocking traffic, but by freezing the actor.
+
 When the Waypoint Proxy detects a `Critical` violation in a prompt:
-1. **Detection**: Waypoint matches the LLM prompt against the intentMatches in the SemaPolicy.
-2. **Annotation**: It annotates the violating Pod: semamesh.io/action: PAUSE.
-3. **Freezing**: The Sema Controller detects the annotation and triggers a CRIU Checkpoint.
-4. **Human-in-the-Loop**: The agent process is frozen; its memory state is saved to disk.
+1. **Detection**: The Proxy matches the LLM prompt against the `intentMatches` in the active `SemaPolicy`.
+2. **Tagging**: It immediately terminates the request (`403 Forbidden`) and annotates the violating Pod with `semamesh.io/action: PAUSE`.
+3. **Freezing (CRIU)**: The Sema Controller watches for this annotation. Upon detection, it triggers **CRIU (Checkpoint/Restore in Userspace)** on the underlying container runtime.
+4. **Forensics**: The agent process is suspended in RAM (or checkpointed to disk). This preserves the agent's memory stack and "thought process," allowing a human operator to debug why the agent went rogue before deciding to terminate or resume it.
 5. **Resolution**: A DevOps Architect reviews the logs and uses kubectl sema approve to thaw or terminate the pod.
 
 ## 🤝 Contributing

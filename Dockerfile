@@ -1,44 +1,63 @@
-# --- Stage 1: Builder ---
-FROM golang:1.23 AS builder
+# --- Stage 1: Build eBPF Artifacts (The "Linux Lab") ---
+FROM ubuntu:22.04 AS bpf-builder
+
+# Install tools to compile C code for BPF
+# We include build-essential and libbpf-dev to support the compilation
+RUN apt-get update && apt-get install -y \
+    clang llvm libbpf-dev \
+    linux-headers-generic \
+    make \
+    build-essential
+
+WORKDIR /build
+
+# FIX 1: Create a symlink for the 'asm' headers so Clang can find them on ARM64
+# This maps /usr/include/aarch64-linux-gnu/asm -> /usr/include/asm
+RUN ln -s /usr/include/$(uname -m)-linux-gnu/asm /usr/include/asm
+
+# Copy only the C source code
+COPY bpf/ /build/bpf/
+
+# FIX 2: Compile the eBPF program with explicit include paths
+# We add -I flags to tell Clang where to find standard headers (sys/socket.h, etc.)
+RUN clang -O2 -g -target bpf \
+    -I/usr/include/$(uname -m)-linux-gnu \
+    -c bpf/sema_redirect.c \
+    -o bpf/sema_redirect.o
+
+# --- Stage 2: Build the Go Proxy (The "Muscle") ---
+# FIX 3: Use Go 1.25 (or latest) to match your local go.mod requirement
+FROM golang:1.25 AS go-builder
 
 WORKDIR /app
 
-# Copy dependency files first (caching)
+# Copy Go dependencies first (for better caching)
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy the rest of the source code
 COPY . .
 
-# Build the Waypoint Proxy (The Brain)
-# CGO_ENABLED=0 creates a static binary (runs on any Linux)
+# Build the Waypoint binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/waypoint ./cmd/waypoint/main.go
 
-# Build the Loader (The Agent that loads eBPF)
-# Note: We assume you have a loader.go. If not, we can run the proxy directly
-# but usually, you need a small setup tool. For this MVP, we'll assume the
-# Proxy *is* the entrypoint and loads eBPF internally if you merged them.
-# If separate, build both. Let's assume a single binary for simplicity here.
-
-# --- Stage 2: Runtime ---
-# We use a distroless image for security (no shell, no unused apps)
-# Or alpine if you want to debug. Let's use Alpine for the MVP.
+# --- Stage 3: Final Runtime Image ---
 FROM alpine:3.19
 
 WORKDIR /root/
 
-# Install necessary system libraries for networking (optional but good for debug)
-RUN apk add --no-cache iproute2 ca-certificates
+# ✅ ADD basic networking tools for debugging (ip, etc.) & curl here so it's always available for testing/healthchecks
+RUN apk add --no-cache iproute2 ca-certificates curl
 
-# Copy the Go Binary
-COPY --from=builder /bin/waypoint .
+# 1. Copy the Go binary from Stage 2
+COPY --from=go-builder /bin/waypoint .
 
-# Copy the Compiled eBPF Object File
-# CRITICAL: We built this in the previous step using Docker!
-COPY bpf/sema_redirect.o /usr/lib/bpf/sema_redirect.o
+# 2. Copy the Compiled eBPF object from Stage 1
+COPY --from=bpf-builder /build/bpf/sema_redirect.o /usr/lib/bpf/sema_redirect.o
 
-# Expose the Waypoint Port
-EXPOSE 15001
+# (Optional) Expose the port your agent listens on.
+# Adjust this number if your code uses something else (e.g., 15000, 8000)
+EXPOSE 8080
 
-# Run the Proxy
+# Start the agent
 CMD ["./waypoint"]

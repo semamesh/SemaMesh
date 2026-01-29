@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-config
+  namespace: default
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        location / {
+          default_type application/json;
+          add_header Content-Type application/json;
+          return 200 '{"id":"mock-123","choices":[{"message":{"role":"assistant","content":"✅ SUCCESS: Connection via SemaMesh Proxy!"}}]}';
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-llm
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-llm
+  template:
+    metadata:
+      labels:
+        app: mock-llm
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+      volumes:
+        - name: config
+          configMap:
+            name: mock-llm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-llm-service
+  namespace: default
+spec:
+  selector:
+    app: mock-llm
+  ports:
+    - protocol: TCP
+      port: 8080       # Expose 8080
+      targetPort: 80   # Container is on 80
+
+
+
+
+
+
+
+
+#apiVersion: v1
+#kind: ConfigMap
+#metadata:
+#  name: mock-llm-config
+#data:
+#  # This mocks a standard OpenAI Chat Completion response
+#  response.json: |
+#    {
+#      "id": "chatcmpl-123",
+#      "object": "chat.completion",
+#      "created": 1677652288,
+#      "model": "gpt-4",
+#      "choices": [{
+#        "index": 0,
+#        "message": {
+#          "role": "assistant",
+#          "content": "I am the SemaMesh Mock LLM. Your request was successfully intercepted and analyzed."
+#        },
+#        "finish_reason": "stop"
+#      }],
+#      "usage": {
+#        "prompt_tokens": 9,
+#        "completion_tokens": 12,
+#        "total_tokens": 21
+#      }
+#    }
+#---
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: mock-llm
+#spec:
+#  replicas: 1
+#  selector:
+#    matchLabels:
+#      app: mock-llm
+#  template:
+#    metadata:
+#      labels:
+#        app: mock-llm
+#    spec:
+#      containers:
+#        - name: nginx
+#          image: nginx:alpine
+#          ports:
+#            - containerPort: 80
+#          volumeMounts:
+#            - name: response-vol
+#              mountPath: /usr/share/nginx/html/v1/chat/completions
+#              subPath: response.json
+#      volumes:
+#        - name: response-vol
+#          configMap:
+#            name: mock-llm-config
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: mock-llm-service
+#spec:
+#  selector:
+#    app: mock-llm
+#  ports:
+#    - protocol: TCP
+#      port: 80
+#      targetPort: 80

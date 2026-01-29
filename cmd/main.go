@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	// Import YOUR local packages
-	semav1alpha1 "semamesh.io/api/v1alpha1"
-	"semamesh.io/internal/controller"
+	semav1alpha1 "github.com/semamesh/semamesh/api/v1alpha1"
+	"github.com/semamesh/semamesh/internal/controller"
 )
 
 var (
