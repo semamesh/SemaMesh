@@ -3,6 +3,12 @@
 
 By moving beyond simple Layer 4/7 networking into **Layer 8+ Semantic Networking**, SemaMesh understands not just where a packet is going, but the **intent** of the AI agent sending it.
 
+## TL;DR: 
+Testing the SemaMesh is as easy as running the provided smoke-test script in a local Kind cluster (OrbStack is preferred). This will verify end-to-end functionality, including policy enforcement.
+
+[**Quick Start (Recommended)**](#2-quick-start-recommended)
+
+
 ## 📖 Table of Contents
 ✨ [**Key Features**](#-key-features)
 
@@ -80,7 +86,7 @@ graph TD
 - **Development**: Docker Desktop or OrbStack (Mac/Windows) with Kind.
 - `kubectl` and `make` installed locally.
 
-## 2. Quick Start (Automated)
+## 2. Quick Start (Recommended)
 - We provide a smoke-test script that creates a local Kind cluster, builds the agent, and runs a full End-to-End verification.
 ```# Clone the repo
 git clone https://github.com/semamesh/semamesh.git
