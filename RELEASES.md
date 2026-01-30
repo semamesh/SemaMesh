@@ -35,3 +35,18 @@ This is an experimental alpha release. It is intended for DevOps architects and 
 
 ## 🤝 Contributors
 A huge shoutout to everyone involved in the initial architecture and design of the semantic "Kill-Switch."
+
+---
+
+# Release v0.2.0: "Minor updates" 🛠️
+Updated Adopters, Contributing,Governance & Maintainers guides.
+
+---
+
+# Release v0.3.0: "Bug fixes & smoke-test plan" 🐛
+Updated the Data Plane, Control Plane, Intent Blocking, Kubectl components, Mock LLM Testing & added a smoke-test plan for new users to validate their installation.
+
+---
+
+# Release v0.4.0: "Roadmap" 🗺️
+Added ROADMAP.md to track future updates and releases.
