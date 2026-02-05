@@ -1,0 +1,87 @@
+---
+# 1. Service Account (Identity Card)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: semamesh-sa
+  namespace: default
+
+---
+# 2. ClusterRole (Permissions)
+# We need to WATCH pods to map IPs to Namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: semamesh-viewer
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+# 3. Binding (Connecting Identity to Permissions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: semamesh-viewer-binding
+subjects:
+  - kind: ServiceAccount
+    name: semamesh-sa
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: semamesh-viewer
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 4. The Deployment (The App)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: semamesh
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: semamesh
+  template:
+    metadata:
+      labels:
+        app: semamesh
+    spec:
+      serviceAccountName: semamesh-sa
+      containers:
+        - name: proxy
+          image: semamesh:v0.5.4
+          imagePullPolicy: IfNotPresent
+          command: ["/root/semamesh"]
+          args: ["--dev=false"]
+          ports:
+            - containerPort: 8080
+              name: proxy
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: OPENAI_API_KEY
+              value: "your-api-key-here" # Replace this before running!
+
+---
+# 5. Service (Network Access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: semamesh
+  namespace: default
+spec:
+  selector:
+    app: semamesh
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+      name: http
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      name: metrics

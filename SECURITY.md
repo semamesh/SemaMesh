@@ -7,9 +7,9 @@ The SemaMesh community takes security seriously. We appreciate your efforts to r
 As a CNCF Sandbox project, we currently prioritize security updates for the latest available release.
 
 | Version | Supported          |
-| ------- | ------------------ |
-| v0.x.x  | :white_check_mark: |
-| < v0.1  | :x:                |
+|---------| ------------------ |
+| v0.5.x  | :white_check_mark: |
+| < v0.5  | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -35,11 +35,13 @@ Please include as much of the following as possible:
 SemaMesh operates with high privileges (`CAP_SYS_ADMIN`, `CAP_NET_ADMIN`) to load eBPF programs and manage CRIU checkpoints.
 
 **In Scope:**
-* **Policy Bypass:** Circumventing `SemaPolicy` rules (e.g., getting a "Blocked" prompt to pass through to the LLM).
-* **Privilege Escalation:** Utilizing the SemaMesh DaemonSet to gain unauthorized root access to the host node.
-* **Denial of Service:** Crashing the Waypoint Proxy or the underlying Node via malformed traffic.
+* **Audit Evasion**: Methods to send traffic through the proxy without it being recorded in the Audit Log.
+* **Identity Spoofing**: Tricking the Identity Watcher into attributing cost/usage to the wrong Kubernetes Namespace.* **Privilege Escalation:** Utilizing the SemaMesh DaemonSet to gain unauthorized root access to the host node.
+* **Privilege Escalation**: Utilizing the container capabilities to gain unauthorized access to the host node.
+* **Denial of Service:** Crashing the Waypoint Proxy or Metrics Server via malformed traffic.
 
 **Out of Scope:**
 * Vulnerabilities in the underlying Kubernetes cluster (e.g., compromised kubelet) unless caused by SemaMesh.
 * Attacks requiring physical access to the node.
 * Spam or social engineering attacks.
+* "Policy Bypass" (Note: Blocking policies are not yet enforced in v0.5.x).
