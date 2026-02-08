@@ -23,7 +23,7 @@ SemaMesh is a hybrid project involving Go (**User Space**) and C (**eBPF Kernel 
 
 1. Fork & Clone
    ```
-   git clone https://github.com/YOUR_USERNAME/SemaMesh.git
+   git clone https://github.com/semamesh/SemaMesh.git
    cd SemaMesh
    ```
 2. Build the Project
